@@ -6,6 +6,7 @@ import { StyleSheet, View } from 'react-native';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { TopNavbar } from '@/components/ui/top-navbar';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { AuthProvider } from '@/lib/auth-context';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -13,14 +14,16 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <StatusBar style="light" />
-      <AnimatedSplashOverlay />
-      <View style={styles.root}>
-        <TopNavbar />
-        <View style={styles.content}>
-          <Slot />
+      <AuthProvider>
+        <StatusBar style="light" />
+        <AnimatedSplashOverlay />
+        <View style={styles.root}>
+          <TopNavbar />
+          <View style={styles.content}>
+            <Slot />
+          </View>
         </View>
-      </View>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

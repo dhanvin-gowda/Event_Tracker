@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HextaUI Event Saver</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-dot" aria-hidden="true"></span>
+        <span class="brand-name">HextaUI</span>
+      </div>
+      <div id="user-controls" class="user-controls hidden">
+        <span id="user-email" class="user-email"></span>
+        <button id="sign-out-btn" type="button" class="ghost-btn">Sign out</button>
+      </div>
+    </header>
+
+    <section id="auth-section" class="card hidden">
+      <h1 class="title">Sign in to save events</h1>
+      <p class="subtitle">Use your HextaUI account so saved events sync to your dashboard.</p>
+
+      <form id="login-form" class="stack">
+        <label class="field">
+          <span>Email</span>
+          <input id="login-email" type="email" placeholder="you@example.com" autocomplete="email" required />
+        </label>
+
+        <label class="field">
+          <span>Password</span>
+          <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" required />
+        </label>
+
+        <button id="login-submit" type="submit" class="primary-btn">Sign in</button>
+      </form>
+    </section>
+
+    <section id="saver-section" class="card hidden">
+      <div class="section-head">
+        <h1 class="title">Save Event URL</h1>
+        <span id="tab-badge" class="badge">Active tab</span>
+      </div>
+
+      <p id="tab-title" class="tab-title"></p>
+
+      <form id="save-form" class="stack">
+        <label class="field">
+          <span>Event URL</span>
+          <input id="event-url" type="url" placeholder="https://lu.ma/..." required />
+        </label>
+
+        <button id="save-btn" type="submit" class="primary-btn">Save Event to App</button>
+      </form>
+
+      <div id="saved-preview" class="preview hidden">
+        <div class="preview-meta">
+          <span id="preview-site" class="badge"></span>
+          <span class="saved-pill">Saved</span>
+        </div>
+        <h2 id="preview-title" class="preview-title"></h2>
+        <p id="preview-date" class="preview-detail"></p>
+        <p id="preview-location" class="preview-detail"></p>
+        <button id="open-dashboard-btn" type="button" class="secondary-btn">
+          Open Dashboard
+        </button>
+      </div>
+    </section>
+
+    <p id="status-error" class="error hidden" role="alert"></p>
+
+    <details class="settings">
+      <summary>App Dashboard URL</summary>
+      <div class="settings-body">
+        <input id="server-origin" type="url" placeholder="http://localhost:8081" />
+        <button id="save-origin-btn" type="button" class="ghost-btn">Save</button>
+      </div>
+    </details>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="popup.js"></script>
+</body>
+
+</html>

@@ -1,8 +1,9 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link, router } from 'expo-router';
 import { Fingerprint, LockKeyhole, Mail, User } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 
 type Field = 'name' | 'email' | 'password' | 'confirmPassword';
@@ -34,6 +36,13 @@ const SignUp = () => {
   const [focusedField, setFocusedField] = useState<Field | null>(null);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { accessToken, isLoading: isCheckingSession } = useAuth();
+
+  useEffect(() => {
+    if (!isCheckingSession && accessToken) {
+      router.replace('/dashboard');
+    }
+  }, [accessToken, isCheckingSession]);
 
   const setFieldValue = (field: Field, value: string) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -79,18 +88,23 @@ const SignUp = () => {
         return;
       }
 
-      if (data.session) {
+      if (data.session?.access_token) {
         router.replace('/dashboard');
         return;
       }
 
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: values.email.trim(),
         password: values.password,
       });
 
       if (signInError) {
         setError(signInError.message);
+        return;
+      }
+
+      if (!signInData.session?.access_token) {
+        setError('Unable to obtain a session token. Please check your email and try again.');
         return;
       }
 
@@ -101,6 +115,16 @@ const SignUp = () => {
       setIsSubmitting(false);
     }
   };
+
+  if (isCheckingSession || accessToken) {
+    return (
+      <SafeAreaView edges={['bottom']} style={styles.safeArea}>
+        <View style={styles.loadingState}>
+          <ActivityIndicator size="large" color="#ffffff" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.safeArea}>
@@ -273,6 +297,11 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#121212',
+  },
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollContent: {
     flexGrow: 1,

@@ -1,43 +1,41 @@
+import { EVENT_SELECT_COLUMNS, type EventRow, mapEventRow } from '@/lib/event-row';
 import { supabase } from '@/lib/supabase';
 import type { ExtractedEvent, SavedEvent } from '@/types/event';
 
-type EventRow = {
-  id: string;
-  user_id: string;
-  source_url: string;
-  title: string;
-  description: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  location: string | null;
-  image_url: string | null;
-  site_name: string | null;
-  created_at: string;
-};
-
-function mapEventRow(row: EventRow): SavedEvent {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    sourceUrl: row.source_url,
-    title: row.title,
-    description: row.description,
-    startDate: row.start_date,
-    endDate: row.end_date,
-    location: row.location,
-    imageUrl: row.image_url,
-    siteName: row.site_name,
-    createdAt: row.created_at,
-  };
-}
-
-/** Fetches parsed event metadata from the Expo Router server API endpoint. */
-export async function fetchEventFromUrl(url: string): Promise<ExtractedEvent> {
-  const response = await fetch('/api/fetch-event', {
+async function postFetchEvent(url: string, accessToken: string): Promise<Response> {
+  return fetch('/api/fetch-event', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
     body: JSON.stringify({ url }),
   });
+}
+
+/** Fetches parsed event metadata from the Expo Router server API endpoint using the user's JWT. */
+export async function fetchEventFromUrl(url: string): Promise<ExtractedEvent> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  let token = session?.access_token ?? null;
+  if (!token) {
+    throw new Error('Please sign in to fetch events.');
+  }
+
+  let response = await postFetchEvent(url, token);
+
+  if (response.status === 401) {
+    const {
+      data: { session: refreshedSession },
+    } = await supabase.auth.refreshSession();
+
+    token = refreshedSession?.access_token ?? null;
+    if (token) {
+      response = await postFetchEvent(url, token);
+    }
+  }
 
   let payload: { event?: ExtractedEvent; error?: string } | null = null;
   try {
@@ -57,9 +55,7 @@ export async function fetchEventFromUrl(url: string): Promise<ExtractedEvent> {
 export async function listSavedEvents(): Promise<SavedEvent[]> {
   const { data, error } = await supabase
     .from('events')
-    .select(
-      'id, user_id, source_url, title, description, start_date, end_date, location, image_url, site_name, created_at'
-    )
+    .select(EVENT_SELECT_COLUMNS)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -96,9 +92,7 @@ export async function saveEvent(event: ExtractedEvent): Promise<SavedEvent> {
       },
       { onConflict: 'user_id,source_url' }
     )
-    .select(
-      'id, user_id, source_url, title, description, start_date, end_date, location, image_url, site_name, created_at'
-    )
+    .select(EVENT_SELECT_COLUMNS)
     .single();
 
   if (error) {

@@ -1,88 +1,55 @@
 import { Image } from 'expo-image';
-import { openBrowserAsync, WebBrowserPresentationStyle } from 'expo-web-browser';
 import { Calendar, ExternalLink, MapPin, Trash2 } from 'lucide-react-native';
-import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { formatEventDate, getEventSourceLabel, openEventUrl } from '@/lib/event-format';
 import { SavedEvent } from '@/types/event';
 
 type EventCardProps = {
   event: SavedEvent;
   isDeleting?: boolean;
+  onPress: (event: SavedEvent) => void;
   onDelete: (id: string) => void;
 };
 
-function formatEventDate(rawDate: string | null): string | null {
-  if (!rawDate) {
-    return null;
-  }
-
-  const parsed = new Date(rawDate);
-  if (Number.isNaN(parsed.getTime())) {
-    return rawDate;
-  }
-
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(parsed);
-  } catch {
-    return rawDate;
-  }
-}
-
-function getSourceLabel(event: SavedEvent): string {
-  if (event.siteName) {
-    return event.siteName;
-  }
-  try {
-    return new URL(event.sourceUrl).hostname.replace(/^www\./i, '');
-  } catch {
-    return 'Event link';
-  }
-}
-
-export function EventCard({ event, isDeleting = false, onDelete }: EventCardProps) {
+export function EventCard({ event, isDeleting = false, onPress, onDelete }: EventCardProps) {
   const formattedDate = formatEventDate(event.startDate);
-  const sourceLabel = getSourceLabel(event);
-
-  const handleOpenSource = async () => {
-    if (Platform.OS === 'web') {
-      await Linking.openURL(event.sourceUrl);
-      return;
-    }
-
-    await openBrowserAsync(event.sourceUrl, {
-      presentationStyle: WebBrowserPresentationStyle.AUTOMATIC,
-    });
-  };
+  const sourceLabel = getEventSourceLabel(event);
 
   return (
     <SpotlightCard spotlightColor="rgba(255, 255, 255, 0.22)" style={styles.card}>
       {event.imageUrl ? (
-        <Image
-          source={{ uri: event.imageUrl }}
-          style={styles.coverImage}
-          contentFit="cover"
-          transition={200}
-        />
+        <Pressable
+          onPress={() => onPress(event)}
+          accessibilityRole="button"
+          accessibilityLabel={`View details for ${event.title}`}
+          style={({ pressed }) => pressed && styles.pressed}>
+          <Image
+            source={{ uri: event.imageUrl }}
+            style={styles.coverImage}
+            contentFit="cover"
+            transition={200}
+          />
+        </Pressable>
       ) : null}
 
       <View style={styles.headerRow}>
-        <View style={styles.badge}>
+        <Pressable
+          onPress={() => onPress(event)}
+          accessibilityRole="button"
+          accessibilityLabel={`View details for ${event.title}`}
+          style={({ pressed }) => [styles.badge, pressed && styles.pressed]}>
           <Text numberOfLines={1} style={styles.badgeText}>
             {sourceLabel}
           </Text>
-        </View>
+        </Pressable>
 
         <View style={styles.headerActions}>
           <Pressable
-            onPress={handleOpenSource}
+            onPress={() => {
+              void openEventUrl(event.sourceUrl);
+            }}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={`Open ${event.title} source link`}
@@ -105,37 +72,43 @@ export function EventCard({ event, isDeleting = false, onDelete }: EventCardProp
         </View>
       </View>
 
-      <Text numberOfLines={2} style={styles.title}>
-        {event.title}
-      </Text>
-
-      {formattedDate || event.location ? (
-        <View style={styles.metaGroup}>
-          {formattedDate ? (
-            <View style={styles.metaRow}>
-              <Calendar size={14} color="rgba(255, 255, 255, 0.55)" strokeWidth={1.8} />
-              <Text numberOfLines={1} style={styles.metaText}>
-                {formattedDate}
-              </Text>
-            </View>
-          ) : null}
-
-          {event.location ? (
-            <View style={styles.metaRow}>
-              <MapPin size={14} color="rgba(255, 255, 255, 0.55)" strokeWidth={1.8} />
-              <Text numberOfLines={1} style={styles.metaText}>
-                {event.location}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {event.description ? (
-        <Text numberOfLines={3} style={styles.description}>
-          {event.description}
+      <Pressable
+        onPress={() => onPress(event)}
+        accessibilityRole="button"
+        accessibilityLabel={`Open full details for ${event.title}`}
+        style={({ pressed }) => pressed && styles.pressed}>
+        <Text numberOfLines={2} style={styles.title}>
+          {event.title}
         </Text>
-      ) : null}
+
+        {formattedDate || event.location ? (
+          <View style={styles.metaGroup}>
+            {formattedDate ? (
+              <View style={styles.metaRow}>
+                <Calendar size={14} color="rgba(255, 255, 255, 0.55)" strokeWidth={1.8} />
+                <Text numberOfLines={1} style={styles.metaText}>
+                  {formattedDate}
+                </Text>
+              </View>
+            ) : null}
+
+            {event.location ? (
+              <View style={styles.metaRow}>
+                <MapPin size={14} color="rgba(255, 255, 255, 0.55)" strokeWidth={1.8} />
+                <Text numberOfLines={1} style={styles.metaText}>
+                  {event.location}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
+        {event.description ? (
+          <Text numberOfLines={3} style={styles.description}>
+            {event.description}
+          </Text>
+        ) : null}
+      </Pressable>
     </SpotlightCard>
   );
 }
