@@ -1,8 +1,9 @@
-import { router } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { ArrowRight, CalendarPlus, Search, X } from 'lucide-react-native';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Pressable,
   RefreshControl,
@@ -14,8 +15,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EventCard } from '@/components/ui/event-card';
+import { EventDetailModal } from '@/components/ui/event-detail-modal';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { useAuth } from '@/lib/auth-context';
 import { normalizeEventUrl } from '@/lib/event-parser';
+import { type EventRow, mapEventRow } from '@/lib/event-row';
 import { deleteSavedEvent, fetchEventFromUrl, listSavedEvents, saveEvent } from '@/lib/events';
 import { supabase } from '@/lib/supabase';
 import { SavedEvent } from '@/types/event';
@@ -25,73 +29,167 @@ const MAX_CONTENT_WIDTH = 800;
 export default function Dashboard() {
   const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
-  const [isCheckingSession, setIsCheckingSession] = useState(true);
-  const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+  const { user, accessToken, isLoading: isCheckingSession } = useAuth();
+  const { url: incomingUrl } = useLocalSearchParams<{ url?: string }>();
+  const handledUrlRef = useRef<string | null>(null);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<SavedEvent | null>(null);
   const [error, setError] = useState('');
   const [events, setEvents] = useState<SavedEvent[]>([]);
 
-  const loadEvents = useCallback(async (refresh = false) => {
-    if (refresh) {
-      setIsRefreshing(true);
-    } else {
-      setIsLoadingEvents(true);
-    }
-
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
     try {
       const saved = await listSavedEvents();
       setEvents(saved);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load saved events.');
     } finally {
-      setIsLoadingEvents(false);
       setIsRefreshing(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
+    if (isCheckingSession) {
+      return;
+    }
+
+    if (!accessToken) {
+      router.replace('/');
+      return;
+    }
+
     let active = true;
-
-    const bootstrapSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!active) {
-        return;
-      }
-
-      if (!session) {
-        setIsCheckingSession(false);
-        router.replace('/');
-        return;
-      }
-
-      setIsCheckingSession(false);
-      void loadEvents();
-    };
-
-    void bootstrapSession();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!active) {
-        return;
-      }
-      if (!session) {
-        setEvents([]);
-        router.replace('/');
-      }
-    });
+    listSavedEvents()
+      .then((saved) => {
+        if (active) {
+          setEvents(saved);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setError(err instanceof Error ? err.message : 'Unable to load saved events.');
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoadingEvents(false);
+        }
+      });
 
     return () => {
       active = false;
-      subscription.unsubscribe();
     };
-  }, [loadEvents]);
+  }, [accessToken, isCheckingSession]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isCheckingSession || !accessToken) {
+        return;
+      }
+
+      let active = true;
+      listSavedEvents()
+        .then((saved) => {
+          if (active) {
+            setEvents(saved);
+          }
+        })
+        .catch(() => {
+          // Keep existing cards visible if background focus refresh fails.
+        });
+
+      return () => {
+        active = false;
+      };
+    }, [accessToken, isCheckingSession])
+  );
+
+  useEffect(() => {
+    if (!accessToken || !user?.id) {
+      return;
+    }
+
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void listSavedEvents()
+          .then((saved) => setEvents(saved))
+          .catch(() => {});
+      }
+    });
+
+    const channel = supabase
+      .channel(`events-sync-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'events',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as { id?: string } | null)?.id;
+            if (deletedId) {
+              setEvents((current) => current.filter((item) => item.id !== deletedId));
+              setSelectedEvent((current) => (current?.id === deletedId ? null : current));
+            }
+            return;
+          }
+
+          if (payload.new && typeof payload.new === 'object' && 'id' in payload.new) {
+            const mapped = mapEventRow(payload.new as EventRow);
+            setEvents((current) => [mapped, ...current.filter((item) => item.id !== mapped.id)]);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      appStateSub.remove();
+      void supabase.removeChannel(channel);
+    };
+  }, [accessToken, user?.id]);
+
+  useEffect(() => {
+    const rawParam = Array.isArray(incomingUrl) ? incomingUrl[0] : incomingUrl;
+    if (isCheckingSession || !accessToken || !rawParam || handledUrlRef.current === rawParam) {
+      return;
+    }
+
+    handledUrlRef.current = rawParam;
+
+    const processIncomingUrl = async () => {
+      await Promise.resolve();
+      let normalizedUrl: string;
+      try {
+        normalizedUrl = normalizeEventUrl(rawParam);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Invalid event URL.');
+        router.setParams({ url: undefined });
+        return;
+      }
+
+      setError('');
+      setIsSubmitting(true);
+      try {
+        const extracted = await fetchEventFromUrl(normalizedUrl);
+        const saved = await saveEvent(extracted);
+        setEvents((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unable to fetch and save that event.');
+      } finally {
+        setIsSubmitting(false);
+        router.setParams({ url: undefined });
+      }
+    };
+
+    void processIncomingUrl();
+  }, [accessToken, incomingUrl, isCheckingSession]);
 
   const handleSubmitUrl = async () => {
     if (isSubmitting) {
@@ -132,6 +230,7 @@ export default function Dashboard() {
     try {
       await deleteSavedEvent(id);
       setEvents((current) => current.filter((item) => item.id !== id));
+      setSelectedEvent((current) => (current?.id === id ? null : current));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to delete event.');
     } finally {
@@ -139,7 +238,7 @@ export default function Dashboard() {
     }
   };
 
-  if (isCheckingSession) {
+  if (isCheckingSession || !accessToken) {
     return (
       <SafeAreaView edges={['bottom', 'left', 'right']} style={styles.safeArea}>
         <View style={styles.centerState}>
@@ -161,7 +260,7 @@ export default function Dashboard() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={() => {
-              void loadEvents(true);
+              void handleRefresh();
             }}
             tintColor="#ffffff"
           />
@@ -262,9 +361,17 @@ export default function Dashboard() {
           <EventCard
             event={item}
             isDeleting={deletingId === item.id}
+            onPress={setSelectedEvent}
             onDelete={handleDeleteEvent}
           />
         )}
+      />
+
+      <EventDetailModal
+        event={selectedEvent}
+        isDeleting={deletingId === selectedEvent?.id}
+        onClose={() => setSelectedEvent(null)}
+        onDelete={handleDeleteEvent}
       />
     </SafeAreaView>
   );

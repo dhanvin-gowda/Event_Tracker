@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { Fingerprint, Globe, LockKeyhole, Mail } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 
 const SignIn1 = () => {
@@ -25,6 +27,7 @@ const SignIn1 = () => {
   const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
   const { height } = useWindowDimensions();
   const [hasHydrated, setHasHydrated] = useState(false);
+  const { accessToken, isLoading: isCheckingSession } = useAuth();
 
   useEffect(() => {
     // Keep the first client render identical to the server render, then apply
@@ -32,6 +35,12 @@ const SignIn1 = () => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setHasHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (!isCheckingSession && accessToken) {
+      router.replace('/dashboard');
+    }
+  }, [accessToken, isCheckingSession]);
 
   const compact = hasHydrated && height < 720;
 
@@ -47,7 +56,7 @@ const SignIn1 = () => {
       setError('Please enter both email and password.');
       return;
     }
-    if (!validateEmail(email)) {
+    if (!validateEmail(email.trim())) {
       setError('Please enter a valid email address.');
       return;
     }
@@ -55,13 +64,18 @@ const SignIn1 = () => {
     setError('');
     setIsSubmitting(true);
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
 
       if (signInError) {
         setError(signInError.message);
+        return;
+      }
+
+      if (!data.session?.access_token) {
+        setError('Unable to obtain a session token. Please try again.');
         return;
       }
 
@@ -72,6 +86,16 @@ const SignIn1 = () => {
       setIsSubmitting(false);
     }
   };
+
+  if (isCheckingSession || accessToken) {
+    return (
+      <SafeAreaView edges={['bottom']} style={styles.safeArea}>
+        <View style={styles.loadingState}>
+          <ActivityIndicator size="large" color="#ffffff" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.safeArea}>
@@ -208,6 +232,11 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#121212',
+  },
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollContent: {
     flexGrow: 1,
