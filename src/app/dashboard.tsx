@@ -117,7 +117,7 @@ export default function Dashboard() {
       if (state === 'active') {
         void listSavedEvents()
           .then((saved) => setEvents(saved))
-          .catch(() => {});
+          .catch(() => { });
       }
     });
 
@@ -272,7 +272,7 @@ export default function Dashboard() {
               <Search size={18} color="rgba(255, 255, 255, 0.5)" strokeWidth={1.8} />
               <TextInput
                 style={styles.input}
-                placeholder="Paste event URL (e.g. https://lu.ma/...)"
+                placeholder="Paste event URL ......"
                 placeholderTextColor="rgba(209, 213, 219, 0.75)"
                 value={query}
                 onChangeText={(value) => {
