@@ -1,0 +1,10 @@
+.claude
+.expo
+.idea
+.vscode
+browser-extension
+dist
+node_modules
+supabase
+.env
+.env*.local
